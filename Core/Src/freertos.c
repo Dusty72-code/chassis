@@ -79,7 +79,7 @@ const osThreadAttr_t Motor_attributes = {
 osThreadId_t OLEDHandle;
 const osThreadAttr_t OLED_attributes = {
   .name = "OLED",
-  .stack_size = 256 * 4,
+  .stack_size = 192 * 4,
   .priority = (osPriority_t) osPriorityLow,
 };
 /* Definitions for LED */
