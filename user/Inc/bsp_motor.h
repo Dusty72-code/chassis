@@ -3,7 +3,7 @@
 //
 
 #ifndef CHASSIS_BSP_MOTOR_H
-#define
+#define CHASSIS_BSP_MOTOR_H
 
 #include "main.h"
 #include "tim.h"
