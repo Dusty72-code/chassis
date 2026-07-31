@@ -22,6 +22,16 @@
 #include "task.h"
 #include "main.h"
 #include "cmsis_os.h"
+#include "bsp_can.h"
+#include "bsp_motor.h"
+#include "bsp_oled.h"
+#include "can_app.h"
+#include "can_protocol.h"
+#include "LED.h"
+#include "motor_control.h"
+#include "pid.h"
+#include "stdio.h"
+#include "math.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -35,7 +45,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define CAN_HEARTBEAT_MASK 0xFFU
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -45,7 +55,18 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN Variables */
-
+static const uint8_t breath_table[LED_PWM_RESOLUTION] = {
+  0,  3,  6,  9, 12, 15, 18, 21, 24, 27,
+ 30, 33, 36, 39, 42, 45, 48, 50, 53, 55,
+ 58, 60, 63, 65, 67, 69, 71, 73, 75, 76,
+ 78, 79, 80, 81, 82, 83, 84, 84, 85, 85,
+ 86, 86, 86, 86, 86, 86, 86, 85, 85, 84,
+ 84, 83, 82, 81, 80, 79, 78, 76, 75, 73,
+ 71, 69, 67, 65, 63, 60, 58, 55, 53, 50,
+ 48, 45, 42, 39, 36, 33, 30, 27, 24, 21,
+ 18, 15, 12,  9,  6,  3,  0,  0,  0,  0,
+  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+};
 /* USER CODE END Variables */
 /* Definitions for CAN_Send */
 osThreadId_t CAN_SendHandle;
@@ -92,7 +113,7 @@ const osThreadAttr_t LED_attributes = {
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
-
+static float encoder_to_rpm(int32_t delta, float dt_sec);
 /* USER CODE END FunctionPrototypes */
 
 void StartCAN_SendTask(void *argument);
@@ -169,9 +190,23 @@ void MX_FREERTOS_Init(void) {
 void StartCAN_SendTask(void *argument)
 {
   /* USER CODE BEGIN StartCAN_SendTask */
+  (void)argument;
+  uint8_t tx_data[8];
+  TickType_t xLastWakeTime = xTaskGetTickCount();
   /* Infinite loop */
   for(;;)
   {
+    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(CAN_SEND_PERIOD_MS));
+    taskENTER_CRITICAL();
+    g_can_state.chassis_feedback.chassis_heartbeat = g_can_state.chassis_heartbeat;
+    ChassisFeedbackMsg_t fb = g_can_state.chassis_feedback;
+    taskEXIT_CRITICAL();
+    Protocol_EncodeChassisFeedback(&fb, tx_data);
+    HAL_StatusTypeDef status = BSP_CAN_SendMessage(CAN_CHASSIS_TO_GIMBAL_ID, tx_data, CAN_TX_TIMEOUT);
+    taskENTER_CRITICAL();
+    g_can_state.chassis_heartbeat = (g_can_state.chassis_heartbeat + 1U) & CAN_HEARTBEAT_MASK;
+    taskEXIT_CRITICAL();
+    if (status == HAL_OK) g_can_state.can_tx_cnt++;
     osDelay(1);
   }
   /* USER CODE END StartCAN_SendTask */
@@ -187,9 +222,27 @@ void StartCAN_SendTask(void *argument)
 void StartCAN_RecvTask(void *argument)
 {
   /* USER CODE BEGIN StartCAN_RecvTask */
+  (void)argument;
+  BSP_CAN_RxMsg_t rx_msg;
   /* Infinite loop */
   for(;;)
   {
+    if (BSP_CAN_GetRxMessage(&rx_msg) == 0U) {
+      vTaskDelay(pdMS_TO_TICKS(1));
+      continue;
+    }
+    if (rx_msg.header.StdId == CAN_GIMBAL_TO_CHASSIS_ID) {
+      taskENTER_CRITICAL();
+      Protocol_DecodeGimbalCtrl(rx_msg.data, &g_can_state.gimbal_ctrl_rx);
+      g_can_state.gimbal_ctrl_updated  = 1U;
+      g_can_state.last_gimbal_rx_time  = HAL_GetTick();
+      g_can_state.can_rx_cnt++;
+      if (g_can_state.gimbal_ctrl_rx.gimbal_heartbeat != g_can_state.last_gimbal_hb) {
+        g_can_state.last_gimbal_hb = g_can_state.gimbal_ctrl_rx.gimbal_heartbeat;
+        g_can_state.gimbal_online  = 1U;
+      }
+      taskEXIT_CRITICAL();
+    }
     osDelay(1);
   }
   /* USER CODE END StartCAN_RecvTask */
@@ -205,9 +258,29 @@ void StartCAN_RecvTask(void *argument)
 void StartCAN_HBTask(void *argument)
 {
   /* USER CODE BEGIN StartCAN_HBTask */
+  (void)argument;
+  TickType_t xLastWakeTime = xTaskGetTickCount();
+  vTaskDelay(pdMS_TO_TICKS(500));
   /* Infinite loop */
   for(;;)
   {
+    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(50));
+    uint32_t now = HAL_GetTick();
+    uint8_t prev_comm_ok = g_can_state.can_comm_ok;
+    uint8_t comm_ok = 1U;
+    if ((now - g_can_state.last_gimbal_rx_time) > CAN_HEARTBEAT_TIMEOUT) {
+      g_can_state.gimbal_online = 0U;
+      comm_ok = 0U;
+    }
+    g_can_state.can_comm_ok = comm_ok;
+    if (prev_comm_ok != comm_ok) {
+      taskENTER_CRITICAL();
+      if (comm_ok)
+        g_can_state.chassis_feedback.status_flags &= ~STATUS_CAN_ERROR;
+      else
+        g_can_state.chassis_feedback.status_flags |= STATUS_CAN_ERROR;
+      taskEXIT_CRITICAL();
+    }
     osDelay(1);
   }
   /* USER CODE END StartCAN_HBTask */
@@ -223,9 +296,57 @@ void StartCAN_HBTask(void *argument)
 void StartMotorTask(void *argument)
 {
   /* USER CODE BEGIN StartMotorTask */
+  (void)argument;
+  TickType_t xLastWakeTime = xTaskGetTickCount();
   /* Infinite loop */
   for(;;)
   {
+    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(MOTOR_CTRL_PERIOD_MS));
+    int32_t encoder_delta = BSP_Motor_GetEncoderAndClear();
+    float actual_rpm = encoder_to_rpm(encoder_delta, MOTOR_CTRL_DT);
+    taskENTER_CRITICAL();
+    g_motor.actual_rpm = actual_rpm;
+    g_motor.raw_encoder = encoder_delta;
+    g_motor.motor_online = 1U;
+    taskEXIT_CRITICAL();
+    float target_rpm = g_motor.target_rpm;
+    if (CAN_App_IsGimbalCtrlUpdated()) {
+      GimbalCtrlMsg_t ctrl = CAN_App_GetGimbalCtrl();
+      target_rpm = (float)ctrl.wheel_target_speed;
+      g_motor.target_rpm = target_rpm;
+      g_motor.target_updated = 1U;
+    }
+    if (fabsf(target_rpm) < MOTOR_ZERO_SPEED_THRESHOLD) {
+      PID_Reset(&g_motor.speed_pid);
+    }
+    float pid_out = PID_Compute(&g_motor.speed_pid, target_rpm, actual_rpm, MOTOR_CTRL_DT);
+    g_motor.pid_output = pid_out;
+    uint16_t duty = (uint16_t)fabsf(pid_out);
+    if (duty > MOTOR_PWM_MAX) duty = MOTOR_PWM_MAX;
+    if (duty < 50 && fabsf(target_rpm) < MOTOR_ZERO_SPEED_THRESHOLD) {
+      BSP_Motor_Stop();
+    }
+    else if (pid_out > 0.0f) {
+      BSP_Motor_SetSpeed(duty, MOTOR_DIR_CW);
+    }
+    else if (pid_out < 0.0f) {
+      BSP_Motor_SetSpeed(duty, MOTOR_DIR_CCW);
+    }
+    else {
+      BSP_Motor_Stop();
+    }
+    CAN_App_SetChassisFeedback((int16_t)actual_rpm, (int16_t)encoder_delta);
+    if (fabsf(actual_rpm) > 500.0f) {
+      g_motor.motor_error = 1U;
+      BSP_Motor_Stop();
+    }
+    else if (fabsf(target_rpm) > 50.0f && fabsf(actual_rpm) < 5.0f
+               && duty > MOTOR_PWM_MAX * 0.3f) {
+      g_motor.motor_error = 1U;
+               }
+    else {
+      g_motor.motor_error = 0U;
+    }
     osDelay(1);
   }
   /* USER CODE END StartMotorTask */
@@ -241,9 +362,57 @@ void StartMotorTask(void *argument)
 void StartOLEDTask(void *argument)
 {
   /* USER CODE BEGIN StartOLEDTask */
+  (void)argument;
+  BSP_OLED_Init();
+  TickType_t xLastWakeTime = xTaskGetTickCount();
   /* Infinite loop */
   for(;;)
   {
+    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(OLED_REFRESH_PERIOD_MS));
+    BSP_OLED_Clear();
+    char line[22];
+    {
+      GimbalCtrlMsg_t ctrl = g_can_state.gimbal_ctrl_rx;
+      if (ctrl.status_flags & STATUS_SELF_TEST) {
+        BSP_OLED_ShowString(0, 0, "=  SELF TEST  =");
+      }
+      else {
+        BSP_OLED_ShowString(0, 0, "RM Chassis C Board");
+      }
+    }
+    {
+      GimbalCtrlMsg_t ctrl = g_can_state.gimbal_ctrl_rx;
+      const char *st = ctrl.servo_online ? "OK" : "OFF";
+      snprintf(line, sizeof(line), "Srv:T%5drpm[%s]", ctrl.servo_target_speed, st);
+      BSP_OLED_ShowString(0, 10, line);
+    }
+    {
+      GimbalCtrlMsg_t ctrl = g_can_state.gimbal_ctrl_rx;
+      snprintf(line, sizeof(line), "MtrT:%5drpm", ctrl.wheel_target_speed);
+      BSP_OLED_ShowString(0, 19, line);
+    }
+    {
+      int16_t actual = (int16_t)g_motor.actual_rpm;
+      const char *st = g_motor.motor_online ? "OK" : "ERR";
+      snprintf(line, sizeof(line), "MtrR:%5drpm[%s]", actual, st);
+      BSP_OLED_ShowString(0, 28, line);
+    }
+    {
+      const char *st = g_can_state.can_comm_ok ? "OK" : "ERR";
+      snprintf(line, sizeof(line), "CAN:[%s]G|C", st);
+      BSP_OLED_ShowString(0, 37, line);
+    }
+    {
+      snprintf(line, sizeof(line), "TX:%4lu RX:%4lu",
+               g_can_state.can_tx_cnt, g_can_state.can_rx_cnt);
+      BSP_OLED_ShowString(0, 46, line);
+    }
+    {
+      uint32_t sec = xTaskGetTickCount() / 1000U;
+      snprintf(line, sizeof(line), "Up:%lus", (unsigned long)sec);
+      BSP_OLED_ShowString(0, 55, line);
+    }
+    BSP_OLED_Refresh();
     osDelay(1);
   }
   /* USER CODE END StartOLEDTask */
@@ -259,9 +428,29 @@ void StartOLEDTask(void *argument)
 void StartLEDTask(void *argument)
 {
   /* USER CODE BEGIN StartLEDTask */
+  (void)argument;
+  uint8_t breath_idx = 0U;
+  uint8_t should_breath = 0U;
   /* Infinite loop */
   for(;;)
   {
+    should_breath = g_motor.motor_error ? 1U : 0U;
+    if (should_breath) {
+      uint8_t brightness = breath_table[breath_idx];
+      uint32_t on_time = (uint32_t)brightness * LED_BREATH_STEP_MS / LED_PWM_RESOLUTION;
+      uint32_t off_time = LED_BREATH_STEP_MS - on_time;
+      HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
+      if (on_time > 0U) vTaskDelay(pdMS_TO_TICKS(on_time));
+      HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
+      if (off_time > 0U) vTaskDelay(pdMS_TO_TICKS(off_time));
+      breath_idx++;
+      if (breath_idx >= LED_PWM_RESOLUTION) breath_idx = 0U;
+    }
+    else {
+      HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
+      vTaskDelay(pdMS_TO_TICKS(100));
+      breath_idx = 0U;
+    }
     osDelay(1);
   }
   /* USER CODE END StartLEDTask */
@@ -269,6 +458,12 @@ void StartLEDTask(void *argument)
 
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
+static float encoder_to_rpm(int32_t delta, float dt_sec)
+{
+  if (dt_sec <= 0.0f) return 0.0f;
+  float revolutions = (float)delta / MOTOR_ENCODER_CPR;
+  return revolutions * 60.0f / dt_sec;
+}
 
 /* USER CODE END Application */
 
