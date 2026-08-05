@@ -234,8 +234,8 @@ void StartCAN_RecvTask(void *argument)
     if (rx_msg.header.StdId == CAN_GIMBAL_TO_CHASSIS_ID) {
       taskENTER_CRITICAL();
       Protocol_DecodeGimbalCtrl(rx_msg.data, &g_can_state.gimbal_ctrl_rx);
-      g_can_state.gimbal_ctrl_updated  = 1U;
-      g_can_state.last_gimbal_rx_time  = HAL_GetTick();
+      g_can_state.gimbal_ctrl_updated = 1U;
+      g_can_state.last_gimbal_rx_time = HAL_GetTick();
       g_can_state.can_rx_cnt++;
       if (g_can_state.gimbal_ctrl_rx.gimbal_heartbeat != g_can_state.last_gimbal_hb) {
         g_can_state.last_gimbal_hb = g_can_state.gimbal_ctrl_rx.gimbal_heartbeat;
@@ -383,7 +383,7 @@ void StartOLEDTask(void *argument)
     {
       GimbalCtrlMsg_t ctrl = g_can_state.gimbal_ctrl_rx;
       const char *st = ctrl.servo_online ? "OK" : "OFF";
-      snprintf(line, sizeof(line), "Srv:T%5drpm[%s]", ctrl.servo_target_speed, st);
+      snprintf(line, sizeof(line), "Srv:%5drpm[%s]", ctrl.servo_target_speed, st);
       BSP_OLED_ShowString(0, 10, line);
     }
     {
