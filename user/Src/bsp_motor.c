@@ -22,20 +22,20 @@ void BSP_Motor_SetSpeed(uint16_t duty, MotorDir_t dir) {
     switch (dir) {
     case MOTOR_DIR_CW:
         HAL_GPIO_WritePin(TB6612_AIN1_GPIO_Port, TB6612_AIN1_Pin, GPIO_PIN_SET);
-        HAL_GPIO_WritePin(TB6612_AIN1_GPIO_Port, TB6612_AIN2_Pin, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(TB6612_AIN2_GPIO_Port, TB6612_AIN2_Pin, GPIO_PIN_RESET);
         break;
     case MOTOR_DIR_CCW:
         HAL_GPIO_WritePin(TB6612_AIN1_GPIO_Port, TB6612_AIN1_Pin, GPIO_PIN_RESET);
-        HAL_GPIO_WritePin(TB6612_AIN1_GPIO_Port, TB6612_AIN2_Pin, GPIO_PIN_SET);
+        HAL_GPIO_WritePin(TB6612_AIN2_GPIO_Port, TB6612_AIN2_Pin, GPIO_PIN_SET);
         break;
     case MOTOR_DIR_BRAKE:
         HAL_GPIO_WritePin(TB6612_AIN1_GPIO_Port, TB6612_AIN1_Pin, GPIO_PIN_SET);
-        HAL_GPIO_WritePin(TB6612_AIN1_GPIO_Port, TB6612_AIN2_Pin, GPIO_PIN_SET);
+        HAL_GPIO_WritePin(TB6612_AIN2_GPIO_Port, TB6612_AIN2_Pin, GPIO_PIN_SET);
         break;
     case MOTOR_DIR_STOP:
     default:
         HAL_GPIO_WritePin(TB6612_AIN1_GPIO_Port, TB6612_AIN1_Pin, GPIO_PIN_RESET);
-        HAL_GPIO_WritePin(TB6612_AIN1_GPIO_Port, TB6612_AIN2_Pin, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(TB6612_AIN2_GPIO_Port, TB6612_AIN2_Pin, GPIO_PIN_RESET);
         break;
     }
     __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, duty);
@@ -44,13 +44,13 @@ void BSP_Motor_SetSpeed(uint16_t duty, MotorDir_t dir) {
 void BSP_Motor_Stop(void) {
     __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);
     HAL_GPIO_WritePin(TB6612_AIN1_GPIO_Port, TB6612_AIN1_Pin, GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(TB6612_AIN1_GPIO_Port, TB6612_AIN2_Pin, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(TB6612_AIN2_GPIO_Port, TB6612_AIN2_Pin, GPIO_PIN_RESET);
 }
 
 void BSP_Motor_Brake(void) {
     __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, MOTOR_PWM_MAX);
     HAL_GPIO_WritePin(TB6612_AIN1_GPIO_Port, TB6612_AIN1_Pin, GPIO_PIN_SET);
-    HAL_GPIO_WritePin(TB6612_AIN1_GPIO_Port, TB6612_AIN2_Pin, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(TB6612_AIN2_GPIO_Port, TB6612_AIN2_Pin, GPIO_PIN_SET);
 }
 
 void BSP_Motor_Enable(void) {

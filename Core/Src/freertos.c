@@ -399,7 +399,7 @@ void StartOLEDTask(void *argument)
     }
     {
       const char *st = g_can_state.can_comm_ok ? "OK" : "ERR";
-      snprintf(line, sizeof(line), "CAN:[%s]G|C", st);
+      snprintf(line, sizeof(line), "CAN:[%s]G-C", st);
       BSP_OLED_ShowString(0, 37, line);
     }
     {
