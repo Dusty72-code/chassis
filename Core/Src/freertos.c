@@ -100,7 +100,7 @@ const osThreadAttr_t Motor_attributes = {
 osThreadId_t OLEDHandle;
 const osThreadAttr_t OLED_attributes = {
   .name = "OLED",
-  .stack_size = 192 * 4,
+  .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityLow,
 };
 /* Definitions for LED */
@@ -363,6 +363,7 @@ void StartOLEDTask(void *argument)
 {
   /* USER CODE BEGIN StartOLEDTask */
   (void)argument;
+  vTaskDelay(pdMS_TO_TICKS(100));
   BSP_OLED_Init();
   TickType_t xLastWakeTime = xTaskGetTickCount();
   /* Infinite loop */
@@ -383,7 +384,7 @@ void StartOLEDTask(void *argument)
     {
       GimbalCtrlMsg_t ctrl = g_can_state.gimbal_ctrl_rx;
       const char *st = ctrl.servo_online ? "OK" : "OFF";
-      snprintf(line, sizeof(line), "Srv:%5drpm[%s]", ctrl.servo_target_speed, st);
+      snprintf(line, sizeof(line), "Srv :%5drpm[%s]", ctrl.servo_target_speed, st);
       BSP_OLED_ShowString(0, 10, line);
     }
     {
@@ -409,7 +410,7 @@ void StartOLEDTask(void *argument)
     }
     {
       uint32_t sec = xTaskGetTickCount() / 1000U;
-      snprintf(line, sizeof(line), "Up:%lus", (unsigned long)sec);
+      snprintf(line, sizeof(line), "Up:%5lus", (unsigned long)sec);
       BSP_OLED_ShowString(0, 55, line);
     }
     BSP_OLED_Refresh();

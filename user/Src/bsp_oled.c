@@ -17,7 +17,9 @@ static void oled_write_data(uint8_t val) {
 }
 
 void BSP_OLED_Init(void) {
-    HAL_Delay(100);
+    /* brief power-up wait for OLED VCC stabilisation */
+    for (volatile uint32_t d = 0U; d < 120000U; d++) { __NOP(); }
+
     oled_write_cmd(0xAE);
     oled_write_cmd(0x00); oled_write_cmd(0x10);
     oled_write_cmd(0x40);
