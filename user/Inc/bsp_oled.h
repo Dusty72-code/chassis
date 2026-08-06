@@ -15,7 +15,7 @@
 #define OLED_WIDTH 128U
 #define OLED_HEIGHT 64U
 #define OLED_PAGES (OLED_HEIGHT / 8U)
-#define OLED_REFRESH_PERIOD_MS 200U
+#define OLED_REFRESH_PERIOD_MS 400U
 
 void BSP_OLED_Init(void);
 void BSP_OLED_Clear(void);

@@ -6,22 +6,39 @@
 #include <stdio.h>
 
 static uint8_t oled_buf[OLED_WIDTH * OLED_PAGES];
+static uint8_t g_oled_i2c_err_cnt = 0U;
+
+/* I2C write with soft error recovery: after several consecutive failures,
+   deinit+reinit the I2C peripheral to unstick the bus */
+static HAL_StatusTypeDef oled_i2c_safe_write(uint8_t *pdata, uint16_t size) {
+    HAL_StatusTypeDef status = HAL_I2C_Master_Transmit(
+        &OLED_I2C_HANDLE, OLED_I2C_ADDR, pdata, size, 20);
+    if (status != HAL_OK) {
+        g_oled_i2c_err_cnt++;
+        if (g_oled_i2c_err_cnt > 5U) {
+            HAL_I2C_DeInit(&OLED_I2C_HANDLE);
+            MX_I2C1_Init();
+            g_oled_i2c_err_cnt = 0U;
+        }
+    } else {
+        g_oled_i2c_err_cnt = 0U;
+    }
+    return status;
+}
 
 static void oled_write_cmd(uint8_t cmd) {
     uint8_t data[2] = { 0x00, cmd };
-    HAL_I2C_Master_Transmit(&OLED_I2C_HANDLE, OLED_I2C_ADDR, data, 2, 10);
+    oled_i2c_safe_write(data, 2);
 }
 
 static void oled_write_data(uint8_t val) {
     uint8_t data[2] = { 0x40, val };
-    HAL_I2C_Master_Transmit(&OLED_I2C_HANDLE, OLED_I2C_ADDR, data, 2, 10);
+    oled_i2c_safe_write(data, 2);
 }
 
 void BSP_OLED_Init(void) {
-    /* I2C bus recovery: deinit + reinit in case bus was stuck after reset */
-    HAL_I2C_DeInit(&OLED_I2C_HANDLE);
-    MX_I2C1_Init();
-    /* power-up wait for OLED VCC stabilisation */
+    /* I2C1 is already initialised by MX_I2C1_Init() in main.c.
+       No deinit/reinit here to avoid glitching the bus during RTOS run. */
     for (volatile uint32_t d = 0U; d < 120000U; d++) { __NOP(); }
 
     oled_write_cmd(0xAE);
