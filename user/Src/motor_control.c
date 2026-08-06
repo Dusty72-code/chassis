@@ -17,7 +17,7 @@ void MotorControl_Init(void)
     PID_Init(&g_motor.speed_pid, MOTOR_KP_DEFAULT,
              MOTOR_KI_DEFAULT, MOTOR_KD_DEFAULT,
              MOTOR_OUTPUT_MIN, MOTOR_OUTPUT_MAX,
-             PID_MODE_INCREMENTAL);
+             MOTOR_PID_MODE);
     BSP_Motor_Init();
     g_motor.motor_online = 1U;
     g_motor.motor_error = 0U;

@@ -10,8 +10,10 @@
 
 #define MOTOR_CTRL_PERIOD_MS 10U
 #define MOTOR_CTRL_DT (MOTOR_CTRL_PERIOD_MS / 1000.0f)
-#define MOTOR_KP_DEFAULT 2.5f
-#define MOTOR_KI_DEFAULT 0.3f
+/* 位置式 PID: 对恒定误差立即给出较大输出, 解决增量式"启动慢、纯靠Ki爬升"的问题 */
+#define MOTOR_PID_MODE PID_MODE_POSITIONAL
+#define MOTOR_KP_DEFAULT 15.0f
+#define MOTOR_KI_DEFAULT 2.0f
 #define MOTOR_KD_DEFAULT 0.0f
 #define MOTOR_OUTPUT_MIN (-(float)MOTOR_PWM_MAX)
 #define MOTOR_OUTPUT_MAX ((float)MOTOR_PWM_MAX)
