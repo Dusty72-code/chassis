@@ -38,9 +38,9 @@ static void oled_write_data(uint8_t val) {
 
 void BSP_OLED_Init(void) {
     /* I2C1 is already initialised by MX_I2C1_Init() in main.c.
-       No deinit/reinit here to avoid glitching the bus during RTOS run. */
-    for (volatile uint32_t d = 0U; d < 120000U; d++) { __NOP(); }
-
+       No deinit/reinit here to avoid glitching the bus during RTOS run.
+       The previous ~80ms NOP spin has been removed so the display is ready
+       almost immediately after the RTOS scheduler starts. */
     oled_write_cmd(0xAE);
     oled_write_cmd(0x00); oled_write_cmd(0x10);
     oled_write_cmd(0x40);
