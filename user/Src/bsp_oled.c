@@ -2,6 +2,7 @@
 // Created by Dolores on 2026/7/31.
 //
 #include "bsp_oled.h"
+#include "i2c.h"
 #include <stdio.h>
 
 static uint8_t oled_buf[OLED_WIDTH * OLED_PAGES];
@@ -17,7 +18,10 @@ static void oled_write_data(uint8_t val) {
 }
 
 void BSP_OLED_Init(void) {
-    /* brief power-up wait for OLED VCC stabilisation */
+    /* I2C bus recovery: deinit + reinit in case bus was stuck after reset */
+    HAL_I2C_DeInit(&OLED_I2C_HANDLE);
+    MX_I2C1_Init();
+    /* power-up wait for OLED VCC stabilisation */
     for (volatile uint32_t d = 0U; d < 120000U; d++) { __NOP(); }
 
     oled_write_cmd(0xAE);
